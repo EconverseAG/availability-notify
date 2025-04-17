@@ -832,6 +832,10 @@ namespace AvailabilityNotify.Services
                 AuthToken = _context.Vtex.AuthToken
             };
 
+            bool importEmail = await SendImportEmail(requestContext);
+
+            throw new Exception("Stop here!");
+
             NotifyRequest[] allRequests = await _availabilityRepository.ListUnsentNotifyRequests();
             if (allRequests != null && allRequests.Length > 0)
             {
@@ -1143,6 +1147,69 @@ namespace AvailabilityNotify.Services
             }
 
             return HttpStatusCode.OK;
+        }
+
+        public async Task<bool> SendImportEmail(RequestContext requestContext)
+        {
+            bool success = false;
+
+            ValidatedUser adminUser = await ValidateUserToken(_context.Vtex.AdminUserAuthToken);
+
+            string templateName = "import-sheet-notifier";
+
+            ImportRequest importRequest = new ImportRequest
+            {
+                Email = adminUser.User
+            };
+
+            EmailImportMessage emailMessage = new EmailImportMessage
+            {
+                TemplateName = templateName,
+                ProviderName = requestContext.Account,
+                JsonData = new JsonDataImport
+                {
+                    ImportRequest = importRequest
+                }
+            };
+
+            string accountName = requestContext.Account;
+            string message = JsonConvert.SerializeObject(emailMessage);
+
+            var request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Post,
+                RequestUri = new Uri($"{Constants.MAIL_SERVICE}?an={accountName}"),
+                Content = new StringContent(message, Encoding.UTF8, Constants.APPLICATION_JSON)
+            };
+
+            request.Headers.Add(Constants.USE_HTTPS_HEADER_NAME, "true");
+            string authToken = requestContext.AuthToken;
+            if (authToken != null)
+            {
+                request.Headers.Add(Constants.AUTHORIZATION_HEADER_NAME, authToken);
+                request.Headers.Add(Constants.VTEX_ID_HEADER_NAME, authToken);
+                request.Headers.Add(Constants.PROXY_AUTHORIZATION_HEADER_NAME, authToken);
+            }
+
+            HttpClient client = _clientFactory.CreateClient();
+            try
+            {
+                HttpResponseMessage responseMessage = await client.SendAsync(request);
+                string responseContent = await responseMessage.Content.ReadAsStringAsync();
+                _context.Vtex.Logger.Debug("SendEmail", null, $"{message}\n[{responseMessage.StatusCode}]\n{responseContent}");
+                success = responseMessage.IsSuccessStatusCode;
+                if (responseMessage.StatusCode.Equals(HttpStatusCode.NotFound))
+                {
+                    _context.Vtex.Logger.Error("SendEmail", null, $"Template {templateName} not found.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _context.Vtex.Logger.Error("SendEmail", null, $"Failure sending {message}", ex);
+                success = false;  //jic
+            }
+
+            return success;
         }
     }
 }

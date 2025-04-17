@@ -32,4 +32,11 @@ namespace AvailabilityNotify.Models
         [JsonProperty("seller", NullValueHandling = NullValueHandling.Ignore)]
         public SellerObj Seller { get; set; }
     }
+
+    public class ImportRequest
+    {
+
+        [JsonProperty("email")]
+        public string Email { get; set; }
+    }
 }
