@@ -421,5 +421,110 @@ namespace AvailabilityNotify.Services
 
             return responseWrapper;
         }
+
+        public async Task<AttachmentsResponseWrapper> SetExportFile(System.IO.Stream stream, string requestEmail, RequestContext requestContext)
+        {
+            DateTimeOffset dateRequest = DateTimeOffset.UtcNow;
+            string acronym = "XL";
+
+            string url = $"https://{requestContext.Account}.{Constants.ENVIRONMENT}.com.br/api/dataentities/{acronym}/documents";
+
+            Export processingExport = new Export
+            {
+                DateRequest = dateRequest.UtcDateTime,
+                Email = requestEmail
+            };
+            string jsonSerializedRequest = JsonConvert.SerializeObject(processingExport);
+
+            var request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Post,
+                RequestUri = new Uri(url),
+                Content = new StringContent(jsonSerializedRequest, Encoding.UTF8, Constants.APPLICATION_JSON)
+            };
+
+            request.Headers.Add(Constants.USE_HTTPS_HEADER_NAME, "true");
+            string authToken = _context.Vtex.AuthToken;
+            if (authToken != null)
+            {
+                request.Headers.Add(Constants.AUTHORIZATION_HEADER_NAME, authToken);
+                request.Headers.Add(Constants.VTEX_ID_HEADER_NAME, authToken);
+                request.Headers.Add(Constants.PROXY_AUTHORIZATION_HEADER_NAME, authToken);
+            }
+
+            var client = _clientFactory.CreateClient();
+            string responseContent = string.Empty;
+            try
+            {
+                HttpResponseMessage responseMessage = await client.SendAsync(request);
+                responseContent = await responseMessage.Content.ReadAsStringAsync();
+
+
+                if (!responseMessage.IsSuccessStatusCode)
+                {
+                    _context.Vtex.Logger.Warn("SetExportFile", null, $"Problem Sending Request '{request.RequestUri}'.\n'{responseContent}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                _context.Vtex.Logger.Error("SetExportFile", null, $"Error Sending Request to {request.RequestUri}", ex);
+
+            }
+
+            AttachmentsResponseWrapper attachmentsResponseWrapper = await UploadExportFile(responseContent, stream, acronym, requestContext.Account, dateRequest, requestEmail);
+
+            return attachmentsResponseWrapper;
+        }
+
+        private async Task<AttachmentsResponseWrapper> UploadExportFile(string responseContent, System.IO.Stream stream, string acronym,
+            string account, DateTimeOffset dateRequest, string requestEmail)
+        {
+            AttachmentsResponseWrapper attachmentsResponseWrapper = null;
+
+            var jsonDerializedResponse = JsonConvert.DeserializeObject<MasterdataResponse>(responseContent);
+            string id = jsonDerializedResponse.DocumentId;
+
+            stream.Position = 0; // Reset position in case it's been read or written to
+            var streamContent = new StreamContent(stream);
+
+            string fileName = $"{requestEmail}--{dateRequest.ToString("yyyy-MM-dd_HH-mm-ss")}.xls";
+            using var content = new MultipartFormDataContent
+                {
+                    { streamContent, "file", fileName }
+                };
+
+            var requestAttachments = new HttpRequestMessage
+            {
+                Method = HttpMethod.Post,
+                RequestUri = new Uri($"https://{account}.{Constants.ENVIRONMENT}.com.br/api/dataentities/{acronym}/documents/{id}/file/attachments"),
+                Content = content
+            };
+            requestAttachments.Headers.Add("Accept", "application/vnd.vtex.ds.v10+json");
+
+            var client = _clientFactory.CreateClient();
+            try
+            {
+                HttpResponseMessage responseMessageAttachments = await client.SendAsync(requestAttachments);
+                string responseContentAttachments = await responseMessageAttachments.Content.ReadAsStringAsync();
+
+                if (!responseMessageAttachments.IsSuccessStatusCode)
+                {
+                    _context.Vtex.Logger.Warn("UploadExportFile", null, $"Problem Sending Request '{requestAttachments.RequestUri}'.\n'{responseContentAttachments}'. \n '{responseMessageAttachments}'");
+                }
+
+                attachmentsResponseWrapper = new AttachmentsResponseWrapper
+                {
+                    FileName = fileName,
+                    FileUrl = $"https://{account}.{Constants.ENVIRONMENT}.com.br/api/dataentities/{acronym}/documents/{id}/file/attachments/{fileName}",
+                };
+            }
+            catch (Exception ex)
+            {
+                _context.Vtex.Logger.Error("UploadExportFile", null, $"Error Sending Request to {requestAttachments.RequestUri}", ex);
+
+            }
+
+            return attachmentsResponseWrapper;
+        }
     }
 }

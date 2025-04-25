@@ -10,6 +10,9 @@ using Vtex.Api.Context;
 using System.Linq;
 using AvailabilityNotify.Models;
 using System.Net;
+using ClosedXML.Excel;
+using System.IO;
+using System.Reflection;
 
 namespace AvailabilityNotify.Services
 {
@@ -832,10 +835,6 @@ namespace AvailabilityNotify.Services
                 AuthToken = _context.Vtex.AuthToken
             };
 
-            bool importEmail = await SendImportEmail(requestContext);
-
-            throw new Exception("Stop here!");
-
             NotifyRequest[] allRequests = await _availabilityRepository.ListUnsentNotifyRequests();
             if (allRequests != null && allRequests.Length > 0)
             {
@@ -884,6 +883,18 @@ namespace AvailabilityNotify.Services
             {
                 results.Add(new ProcessingResult());
             }
+
+            ValidatedUser adminUser = await ValidateUserToken(_context.Vtex.AdminUserAuthToken);
+
+            byte[] fileData = GenerateFile(results);
+
+            AttachmentsResponseWrapper attachmentsResponseWrapper = null;
+            using (var stream = new MemoryStream(fileData))
+            {
+                attachmentsResponseWrapper = await _availabilityRepository.SetExportFile(stream, adminUser.User, requestContext);
+            }
+
+            bool importEmail = await SendExportEmail(requestContext, adminUser.User, attachmentsResponseWrapper);
 
             return results.ToArray();
         }
@@ -1149,17 +1160,17 @@ namespace AvailabilityNotify.Services
             return HttpStatusCode.OK;
         }
 
-        public async Task<bool> SendImportEmail(RequestContext requestContext)
+        public async Task<bool> SendExportEmail(RequestContext requestContext, string email, AttachmentsResponseWrapper attachmentInfo)
         {
             bool success = false;
-
-            ValidatedUser adminUser = await ValidateUserToken(_context.Vtex.AdminUserAuthToken);
 
             string templateName = "import-sheet-notifier";
 
             ImportRequest importRequest = new ImportRequest
             {
-                Email = adminUser.User
+                Email = email,
+                FileName = attachmentInfo.FileName,
+                FileUrl = attachmentInfo.FileUrl
             };
 
             EmailImportMessage emailMessage = new EmailImportMessage
@@ -1196,20 +1207,58 @@ namespace AvailabilityNotify.Services
             {
                 HttpResponseMessage responseMessage = await client.SendAsync(request);
                 string responseContent = await responseMessage.Content.ReadAsStringAsync();
-                _context.Vtex.Logger.Debug("SendEmail", null, $"{message}\n[{responseMessage.StatusCode}]\n{responseContent}");
+
                 success = responseMessage.IsSuccessStatusCode;
+
                 if (responseMessage.StatusCode.Equals(HttpStatusCode.NotFound))
                 {
-                    _context.Vtex.Logger.Error("SendEmail", null, $"Template {templateName} not found.");
+                    _context.Vtex.Logger.Error("SendExportEmail", null, $"Template {templateName} not found.");
                 }
             }
             catch (Exception ex)
             {
-                _context.Vtex.Logger.Error("SendEmail", null, $"Failure sending {message}", ex);
+                _context.Vtex.Logger.Error("SendExportEmail", null, $"Failure sending {message}", ex);
                 success = false;  //jic
             }
 
             return success;
         }
+
+        public byte[] GenerateFile(List<ProcessingResult> list)
+        {
+
+            using (var workbook = new XLWorkbook())
+            {
+                var worksheet = workbook.Worksheets.Add("ProcessingResult");
+
+                int line = 1;
+                GenerateHeader(worksheet);
+                line++;
+
+                foreach (var item in list)
+                {
+                    worksheet.Cell("A" + line).Value = item.SkuId;
+                    worksheet.Cell("B" + line).Value = item.QuantityAvailable;
+                    worksheet.Cell("C" + line).Value = item.Email;
+                    worksheet.Cell("D" + line).Value = item.Sent;
+                    worksheet.Cell("E" + line).Value = item.Updated;
+                    line++;
+                }
+                using var stream = new MemoryStream();
+                workbook.SaveAs(stream);
+
+                return stream.ToArray();
+            }
+        }
+
+        public void GenerateHeader(IXLWorksheet worksheet)
+        {
+            worksheet.Cell("A1").Value = "Sku Id";
+            worksheet.Cell("B1").Value = "Quantity Available";
+            worksheet.Cell("C1").Value = "Email";
+            worksheet.Cell("D1").Value = "Sent";
+            worksheet.Cell("E1").Value = "Updated";
+        }
+
     }
 }

@@ -38,5 +38,9 @@ namespace AvailabilityNotify.Models
 
         [JsonProperty("email")]
         public string Email { get; set; }
+        [JsonProperty("filename")]
+        public string FileName { get; set; }
+        [JsonProperty("fileUrl")]
+        public string FileUrl { get; set; }
     }
 }

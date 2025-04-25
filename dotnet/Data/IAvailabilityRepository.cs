@@ -21,5 +21,6 @@ namespace AvailabilityNotify.Services
         Task<NotifyRequest[]> ListRequestsForSkuId(string skuId, RequestContext requestContext);
         Task<NotifyRequest[]> ListNotifyRequests();
         Task<NotifyRequest[]> ListUnsentNotifyRequests();
+        Task<AttachmentsResponseWrapper> SetExportFile(System.IO.Stream stream, string requestEmail, RequestContext requestContext);
     }
 }
