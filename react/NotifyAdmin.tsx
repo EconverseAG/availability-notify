@@ -15,6 +15,7 @@ import {
   Toggle,
   Button,
   Divider,
+  Alert,
 } from 'vtex.styleguide'
 import XLSX from 'xlsx'
 import { useMutation, useQuery } from 'react-apollo'
@@ -82,6 +83,11 @@ const messages = defineMessages({
     id: 'admin/settings.marketplace-to-notify-helptext',
     defaultMessage:
       'Allows a seller account to specify a comma separated list of marketplace account names to notify of inventory updates.',
+  },
+  processUnsentAlert: {
+    id: 'admin/settings.process-unsent-alert',
+    defaultMessage:
+      'Caso o download não seja iniciado automaticamente, o link para o arquivo final será enviado por e-mail assim que o processamento for concluído.',
   },
 })
 
@@ -320,6 +326,11 @@ const NotifyAdmin: FC<any> = ({ intl }: Props) => {
                 subtitle={intl.formatMessage(messages.processUnsentHelptext)}
               >
                 <div>
+                  {processing && (
+                    <Alert type="warning" className="mb3">
+                     {intl.formatMessage(messages.processUnsentAlert)}
+                    </Alert>
+                  )}
                   <ButtonWithIcon
                     icon={download}
                     isLoading={processing}
