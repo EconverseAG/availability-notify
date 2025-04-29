@@ -515,13 +515,18 @@ namespace AvailabilityNotify.Services
                 attachmentsResponseWrapper = new AttachmentsResponseWrapper
                 {
                     FileName = fileName,
-                    FileUrl = $"https://{account}.{Constants.ENVIRONMENT}.com.br/api/dataentities/{acronym}/documents/{id}/file/attachments/{fileName}",
+                    FileUrl = $"https://{account}.vtexcrm.com.br/DynamicForm/GetFile?dataEntityInstanceId={acronym}-{id}&fileName={fileName}",
                 };
+
             }
             catch (Exception ex)
             {
                 _context.Vtex.Logger.Error("UploadExportFile", null, $"Error Sending Request to {requestAttachments.RequestUri}", ex);
-
+                attachmentsResponseWrapper = new AttachmentsResponseWrapper
+                {
+                    FileName = string.Empty,
+                    FileUrl = string.Empty,
+                };
             }
 
             return attachmentsResponseWrapper;
